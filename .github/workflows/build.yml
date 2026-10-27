@@ -17,7 +17,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release already exists; assets will be added to it."
           else
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "COVI $GITHUB_REF_NAME" --generate-notes
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "C.O.V.I. $GITHUB_REF_NAME" --generate-notes
           fi
   build:
     needs: create-release

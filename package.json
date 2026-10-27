@@ -1,7 +1,7 @@
 {
   "name": "covi",
-  "version": "1.2.0",
-  "description": "COVI — Conversor Otimizado de Vários formatos de Imagem. Converta. Simplifique. Pronto.",
+  "version": "1.2.1",
+  "description": "C.O.V.I. — Conversor Otimizado de Vários formatos de Imagem. Converta. Simplifique. Pronto.",
   "main": "main.js",
   "author": {
     "name": "Alexandre",
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "com.alexandre.conversorheic",
-    "productName": "COVI",
+    "productName": "C.O.V.I.",
     "publish": [
       {
         "provider": "github",

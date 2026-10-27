@@ -75,7 +75,7 @@ function notifyManualUpdate(version, releaseUrl, force = false) {
   prefs.lastUpdateNotice = version;
   savePrefs();
   showNotice(
-    'Atualização do COVI disponível',
+    'Atualização do C.O.V.I. disponível',
     `A versão ${version} está disponível. Clique para abrir a página de download.`,
     'Baixar atualização',
     () => shell.openExternal(releaseUrl).catch((error) => console.error('Não foi possível abrir o download:', error))
@@ -91,10 +91,10 @@ async function checkManualUpdate(manual) {
     if (compareVersions(version, app.getVersion()) > 0) {
       if (manual || prefs.lastUpdateNotice !== version) notifyManualUpdate(version, release.html_url || RELEASES_PAGE, manual);
     } else if (manual) {
-      showNotice('COVI atualizado', 'Você já está usando a versão mais recente.');
+      showNotice('C.O.V.I. atualizado', 'Você já está usando a versão mais recente.');
     }
   } catch (error) {
-    console.error('Não foi possível verificar atualizações do COVI:', error);
+    console.error('Não foi possível verificar atualizações do C.O.V.I.:', error);
     if (manual) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
   } finally {
     releaseCheckInProgress = false;
@@ -107,7 +107,7 @@ function supportsAutomaticUpdates() {
 
 async function checkForUpdates(manual = false) {
   if (!app.isPackaged) {
-    if (manual) showNotice('COVI em desenvolvimento', 'A verificação de atualizações está disponível na versão instalada.');
+    if (manual) showNotice('C.O.V.I. em desenvolvimento', 'A verificação de atualizações está disponível na versão instalada.');
     return;
   }
   if (!supportsAutomaticUpdates()) {
@@ -120,7 +120,7 @@ async function checkForUpdates(manual = false) {
   try {
     await autoUpdater.checkForUpdates();
   } catch (error) {
-    console.error('Não foi possível verificar atualizações do COVI:', error);
+    console.error('Não foi possível verificar atualizações do C.O.V.I.:', error);
     if (manualUpdateCheck && manual) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
     manualUpdateCheck = false;
   } finally {
@@ -135,11 +135,11 @@ function startUpdateChecks() {
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.autoRunAppAfterInstall = true;
     autoUpdater.on('update-available', (info) => {
-      console.info(`Atualização do COVI encontrada: ${info.version}`);
+      console.info(`Atualização do C.O.V.I. encontrada: ${info.version}`);
       manualUpdateCheck = false;
     });
     autoUpdater.on('update-not-available', (info) => {
-      if (manualUpdateCheck) showNotice('COVI atualizado', `Você já está usando a versão ${info.version}.`);
+      if (manualUpdateCheck) showNotice('C.O.V.I. atualizado', `Você já está usando a versão ${info.version}.`);
       manualUpdateCheck = false;
     });
     autoUpdater.on('update-downloaded', (info) => {
@@ -148,14 +148,14 @@ function startUpdateChecks() {
       savePrefs();
       buildMenu();
       showNotice(
-        'Atualização do COVI pronta',
+        'Atualização do C.O.V.I. pronta',
         `A versão ${info.version} foi baixada. Clique para reiniciar e instalar agora; ela também será instalada ao sair.`,
         'Reiniciar agora',
         () => autoUpdater.quitAndInstall(false, true)
       );
     });
     autoUpdater.on('error', (error) => {
-      console.error('Erro no atualizador do COVI:', error);
+      console.error('Erro no atualizador do C.O.V.I.:', error);
       if (manualUpdateCheck) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
       manualUpdateCheck = false;
     });
@@ -248,7 +248,7 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('com.alexandre.conversorheic');
   loadPrefs();
   tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 18, height: 18 }));
-  tray.setToolTip('COVI');
+  tray.setToolTip('C.O.V.I.');
   tray.on('click', openMain);
   buildMenu();
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
