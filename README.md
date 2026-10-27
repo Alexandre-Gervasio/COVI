@@ -20,6 +20,16 @@ Baixe o instalador para seu sistema operacional na página de
 - Use o monitoramento da pasta Downloads para receber um aviso quando novas
   fotos HEIC/HEIF forem baixadas.
 - Mantenha os arquivos originais: as conversões são salvas como cópias.
+- Receba avisos quando uma nova versão do COVI estiver disponível.
+
+## Atualizações
+
+O COVI verifica novas versões ao iniciar e periodicamente enquanto está aberto.
+No Windows e no Linux AppImage, baixa as atualizações em segundo plano e as
+instala ao sair ou ao escolher **Reiniciar agora** no aviso. No macOS e na
+versão Linux `.deb`, o aviso abre a página pública para baixar a nova versão.
+É necessária conexão com a internet apenas para consultar e baixar atualizações;
+a conversão de imagens continua funcionando offline.
 
 ## Começar
 
