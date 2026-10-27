@@ -1,6 +1,6 @@
 {
   "name": "covi",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "C.O.V.I. — Conversor Otimizado de Vários formatos de Imagem. Converta. Simplifique. Pronto.",
   "main": "main.js",
   "author": {
@@ -35,11 +35,16 @@
       "preload.js",
       "index.html",
       "prompt.html",
+      "src/**/*",
       "build/icon.png",
       "package.json"
     ],
     "win": {
       "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [

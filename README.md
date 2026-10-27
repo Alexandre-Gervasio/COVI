@@ -4,6 +4,8 @@
 
 **Converta. Simplifique. Pronto.**
 
+A versão instalada aparece ao lado do nome do aplicativo.
+
 Converta fotos HEIC e HEIF do iPhone para **PNG** ou **JPG**. O C.O.V.I.
 funciona offline: seus arquivos são processados no próprio computador e os
 originais são preservados, a menos que você escolha substituí-los.
@@ -28,6 +30,9 @@ Baixe o instalador para seu sistema operacional na página de
 - Nas abas manuais, a opção de substituir o original fica marcada por padrão
   e pede confirmação; desmarque-a para manter os originais e salvar cópias.
 - Receba avisos quando uma nova versão do C.O.V.I. estiver disponível.
+- Use **Verificar atualizações** na janela do aplicativo para procurar uma versão
+  nova; no Windows e no Linux AppImage, o botão também permite reiniciar para
+  concluir uma atualização baixada.
 
 Na segunda aba, a lista de entradas é determinada pelos decodificadores
 incluídos na versão e pode variar por sistema operacional. Arquivos animados,
@@ -37,12 +42,25 @@ transparência; GIF também limita a paleta a 256 cores.
 
 ## Atualizações
 
-O C.O.V.I. verifica novas versões ao iniciar e periodicamente enquanto está aberto.
+O C.O.V.I. verifica novas versões ao iniciar, periodicamente enquanto está aberto
+e quando você clica em **Verificar atualizações**.
 No Windows e no Linux AppImage, baixa as atualizações em segundo plano e as
 instala ao sair ou ao escolher **Reiniciar agora** no aviso. No macOS e na
 versão Linux `.deb`, o aviso abre a página pública para baixar a nova versão.
 É necessária conexão com a internet apenas para consultar e baixar atualizações;
 a conversão de imagens continua funcionando offline.
+
+## Organização do código
+
+- `main.js`: inicialização do Electron e integração dos serviços.
+- `src/main/`: conversão de imagens, atualizações, preferências, avisos e
+  monitoramento da pasta Downloads.
+- `src/renderer/`: interface, estilos e fluxos de conversão.
+- `preload.js`: ponte controlada entre a interface e o processo principal.
+
+O `.gitignore` exclui dependências, builds, logs e arquivos de ambiente locais.
+Ele evita que esses arquivos sejam adicionados ao Git por engano, mas não impede
+a cópia do código-fonte que já está publicado no repositório público.
 
 ## Começar
 
@@ -65,6 +83,9 @@ operacional:
 - **Windows:** `.exe`
 - **macOS:** `.dmg`
 - **Linux:** `.AppImage` e `.deb`
+
+No instalador do Windows, escolha se deseja criar atalhos na área de trabalho e
+no menu Iniciar. As duas opções vêm selecionadas por padrão.
 
 ## Gerar instaladores para todas as plataformas
 
