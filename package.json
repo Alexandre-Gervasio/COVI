@@ -1,6 +1,6 @@
 {
   "name": "covi",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "COVI — Conversor Otimizado de Vários formatos de Imagem. Converta. Simplifique. Pronto.",
   "main": "main.js",
   "author": {
