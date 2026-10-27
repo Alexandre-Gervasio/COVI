@@ -8,6 +8,11 @@ Converta fotos HEIC e HEIF do iPhone para **JPG**, **PNG** ou **WebP**. O COVI
 funciona offline: seus arquivos são processados no próprio computador e os
 originais são preservados.
 
+## Baixar
+
+Baixe o instalador para seu sistema operacional na página de
+[releases do COVI](https://github.com/Alexandre-Gervasio/COVI/releases/latest).
+
 ## Recursos
 
 - Converta uma ou várias fotos de uma só vez.
