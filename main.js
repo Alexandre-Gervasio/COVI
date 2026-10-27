@@ -1,17 +1,169 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, Notification, shell } = require('electron');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 const ICON = path.join(__dirname, 'build', 'icon.png');
 const DOWNLOADS = () => app.getPath('downloads');
 const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
+const RELEASES_API = 'https://api.github.com/repos/Alexandre-Gervasio/COVI/releases/latest';
+const RELEASES_PAGE = 'https://github.com/Alexandre-Gervasio/COVI/releases/latest';
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 let prefs = { format: 'jpg', watch: true };
 let win = null, tray = null, popup = null, quitting = false, watcher = null;
 let known = new Set(), pending = [], flushTimer = null, queue = [];
+let updateCheckTimer = null, updateCheckInProgress = false, releaseCheckInProgress = false;
+let manualUpdateCheck = false, updateReadyVersion = null;
 
 function loadPrefs() { try { prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) }; } catch (e) {} }
 function savePrefs() { try { fs.writeFileSync(prefsFile(), JSON.stringify(prefs)); } catch (e) {} }
 const webPrefs = { preload: path.join(__dirname, 'preload.js') };
+
+function compareVersions(a, b) {
+  const parse = (version) => {
+    const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
+    if (!match) throw new Error(`Versão inválida recebida do GitHub: ${version}`);
+    return match.slice(1).map(Number);
+  };
+  const left = parse(a), right = parse(b);
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return left[i] > right[i] ? 1 : -1;
+  }
+  return 0;
+}
+
+function showNotice(title, body, button, onClick) {
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title, body, icon: ICON });
+    if (onClick) notification.on('click', onClick);
+    notification.show();
+    return;
+  }
+  const options = { type: 'info', title, message: body, buttons: onClick ? [button, 'Depois'] : ['OK'], cancelId: onClick ? 1 : 0 };
+  const parent = win && !win.isDestroyed() ? win : undefined;
+  const messageBox = parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
+  messageBox.then(({ response }) => {
+    if (onClick && response === 0) onClick();
+  }).catch((error) => console.error('Não foi possível exibir o aviso de atualização:', error));
+}
+
+function getLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const request = https.get(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'COVI-updater' }
+    }, (response) => {
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`GitHub respondeu com HTTP ${response.statusCode}`));
+        return;
+      }
+      let data = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => {
+        try { resolve(JSON.parse(data)); } catch (error) { reject(error); }
+      });
+    });
+    request.setTimeout(10000, () => request.destroy(new Error('Tempo limite ao consultar atualizações')));
+    request.on('error', reject);
+  });
+}
+
+function notifyManualUpdate(version, releaseUrl, force = false) {
+  if (!force && prefs.lastUpdateNotice === version) return;
+  prefs.lastUpdateNotice = version;
+  savePrefs();
+  showNotice(
+    'Atualização do COVI disponível',
+    `A versão ${version} está disponível. Clique para abrir a página de download.`,
+    'Baixar atualização',
+    () => shell.openExternal(releaseUrl).catch((error) => console.error('Não foi possível abrir o download:', error))
+  );
+}
+
+async function checkManualUpdate(manual) {
+  if (releaseCheckInProgress) return;
+  releaseCheckInProgress = true;
+  try {
+    const release = await getLatestRelease();
+    const version = release.tag_name;
+    if (compareVersions(version, app.getVersion()) > 0) {
+      if (manual || prefs.lastUpdateNotice !== version) notifyManualUpdate(version, release.html_url || RELEASES_PAGE, manual);
+    } else if (manual) {
+      showNotice('COVI atualizado', 'Você já está usando a versão mais recente.');
+    }
+  } catch (error) {
+    console.error('Não foi possível verificar atualizações do COVI:', error);
+    if (manual) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
+  } finally {
+    releaseCheckInProgress = false;
+  }
+}
+
+function supportsAutomaticUpdates() {
+  return process.platform === 'win32' || (process.platform === 'linux' && Boolean(process.env.APPIMAGE));
+}
+
+async function checkForUpdates(manual = false) {
+  if (!app.isPackaged) {
+    if (manual) showNotice('COVI em desenvolvimento', 'A verificação de atualizações está disponível na versão instalada.');
+    return;
+  }
+  if (!supportsAutomaticUpdates()) {
+    checkManualUpdate(manual);
+    return;
+  }
+  if (updateCheckInProgress) return;
+  updateCheckInProgress = true;
+  manualUpdateCheck = manual;
+  try {
+    await autoUpdater.checkForUpdates();
+  } catch (error) {
+    console.error('Não foi possível verificar atualizações do COVI:', error);
+    if (manualUpdateCheck && manual) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
+    manualUpdateCheck = false;
+  } finally {
+    updateCheckInProgress = false;
+  }
+}
+
+function startUpdateChecks() {
+  if (!app.isPackaged) return;
+  if (supportsAutomaticUpdates()) {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.autoRunAppAfterInstall = true;
+    autoUpdater.on('update-available', (info) => {
+      console.info(`Atualização do COVI encontrada: ${info.version}`);
+      manualUpdateCheck = false;
+    });
+    autoUpdater.on('update-not-available', (info) => {
+      if (manualUpdateCheck) showNotice('COVI atualizado', `Você já está usando a versão ${info.version}.`);
+      manualUpdateCheck = false;
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      updateReadyVersion = info.version;
+      prefs.lastUpdateNotice = info.version;
+      savePrefs();
+      buildMenu();
+      showNotice(
+        'Atualização do COVI pronta',
+        `A versão ${info.version} foi baixada. Clique para reiniciar e instalar agora; ela também será instalada ao sair.`,
+        'Reiniciar agora',
+        () => autoUpdater.quitAndInstall(false, true)
+      );
+    });
+    autoUpdater.on('error', (error) => {
+      console.error('Erro no atualizador do COVI:', error);
+      if (manualUpdateCheck) showNotice('Falha ao verificar atualizações', 'Verifique sua conexão com a internet e tente novamente.');
+      manualUpdateCheck = false;
+    });
+  }
+  checkForUpdates();
+  updateCheckTimer = setInterval(() => checkForUpdates(), UPDATE_CHECK_INTERVAL);
+  updateCheckTimer.unref();
+}
 
 function openMain() {
   if (win) { win.show(); win.focus(); return; }
@@ -75,6 +227,8 @@ function next() {
 function buildMenu() {
   const items = [
     { label: 'Abrir conversor', click: openMain },
+    { label: 'Verificar atualizações', click: () => checkForUpdates(true) },
+    ...(updateReadyVersion ? [{ label: `Reiniciar para atualizar para ${updateReadyVersion}`, click: () => autoUpdater.quitAndInstall(false, true) }] : []),
     { label: 'Avisar quando baixar fotos HEIC', type: 'checkbox', checked: prefs.watch,
       click: (m) => { prefs.watch = m.checked; savePrefs(); startWatch(); } }
   ];
@@ -91,6 +245,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', openMain);
 
 app.whenReady().then(() => {
+  if (process.platform === 'win32') app.setAppUserModelId('com.alexandre.conversorheic');
   loadPrefs();
   tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 18, height: 18 }));
   tray.setToolTip('COVI');
@@ -99,8 +254,9 @@ app.whenReady().then(() => {
   const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
   if (!hidden) openMain();
   startWatch();
+  startUpdateChecks();
 });
-app.on('before-quit', () => { quitting = true; });
+app.on('before-quit', () => { quitting = true; if (updateCheckTimer) clearInterval(updateCheckTimer); });
 app.on('window-all-closed', () => {});
 
 // ---------- IPC ----------
