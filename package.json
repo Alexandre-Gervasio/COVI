@@ -67,5 +67,8 @@
       "category": "Graphics",
       "maintainer": "Alexandre <alexandrework010@gmail.com>"
     }
+  },
+  "allowScripts": {
+    "electron@33.2.1": true
   }
 }
