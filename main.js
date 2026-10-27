@@ -3,6 +3,7 @@ const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { autoUpdater } = require('electron-updater');
+const sharp = require('sharp');
 
 const ICON = path.join(__dirname, 'build', 'icon.png');
 const DOWNLOADS = () => app.getPath('downloads');
@@ -10,7 +11,21 @@ const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
 const RELEASES_API = 'https://api.github.com/repos/Alexandre-Gervasio/COVI/releases/latest';
 const RELEASES_PAGE = 'https://github.com/Alexandre-Gervasio/COVI/releases/latest';
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
-let prefs = { format: 'jpg', watch: true };
+const LOSSLESS_SPACES = ['srgb', 'rgb', 'rgb16', 'b-w', 'grey16'];
+const INPUT_FORMATS = {
+  jpeg: ['jpg', 'jpeg', 'jpe'],
+  png: ['png'],
+  webp: ['webp'],
+  tiff: ['tif', 'tiff', 'tf8', 'btf', 'btif'],
+  gif: ['gif'],
+  heif: ['heic', 'heif', 'hif', 'avif'],
+};
+const LOSSLESS_FORMATS = [
+  { id: 'png', label: 'PNG (sem perda)', extensions: ['srgb', 'rgb', 'rgb16', 'b-w', 'grey16'] },
+  { id: 'tiff', label: 'TIFF sem compressão' },
+  { id: 'webp', label: 'WebP lossless', extensions: ['srgb'] }
+];
+let prefs = { watch: true };
 let win = null, tray = null, popup = null, quitting = false, watcher = null;
 let known = new Set(), pending = [], flushTimer = null, queue = [];
 let updateCheckTimer = null, updateCheckInProgress = false, releaseCheckInProgress = false;
@@ -19,6 +34,59 @@ let manualUpdateCheck = false, updateReadyVersion = null;
 function loadPrefs() { try { prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) }; } catch (e) {} }
 function savePrefs() { try { fs.writeFileSync(prefsFile(), JSON.stringify(prefs)); } catch (e) {} }
 const webPrefs = { preload: path.join(__dirname, 'preload.js') };
+
+function getSupportedImageExtensions() {
+  return Object.entries(INPUT_FORMATS)
+    .filter(([format]) => sharp.format[format] && sharp.format[format].input.file)
+    .flatMap(([, extensions]) => extensions)
+    .sort();
+}
+
+function getInputFormat(filePath) {
+  const extension = path.extname(filePath).slice(1).toLowerCase();
+  return Object.entries(INPUT_FORMATS).find(([format, extensions]) =>
+    extensions.includes(extension) && sharp.format[format] && sharp.format[format].input.file
+  )?.[0];
+}
+
+function getLosslessTargets(metadata) {
+  if ((metadata.pages || 1) > 1) return [];
+  if (!['uchar', 'ushort'].includes(metadata.depth)) return [];
+  if (!LOSSLESS_SPACES.includes(metadata.space)) return [];
+  return LOSSLESS_FORMATS
+    .filter((format) => sharp.format[format.id] && sharp.format[format.id].output.file && (format.id === 'tiff' || (
+      (!format.extensions || format.extensions.includes(metadata.space)) &&
+      (format.id !== 'webp' || (metadata.depth === 'uchar' && !metadata.hasAlpha))
+    )))
+    .map(({ id, label }) => ({ id, label }));
+}
+
+async function getLosslessImageInfo(filePath) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+    throw new Error('Caminho de arquivo inválido.');
+  }
+  const inputFormat = getInputFormat(filePath);
+  if (!inputFormat) throw new Error('Formato de entrada não suportado por esta versão do C.O.V.I.');
+  const stat = await fs.promises.stat(filePath);
+  if (!stat.isFile()) throw new Error('O caminho selecionado não é um arquivo.');
+  const metadata = await sharp(filePath, { animated: true }).metadata();
+  const targets = getLosslessTargets(metadata);
+  let reason = '';
+  if ((metadata.pages || 1) > 1) reason = 'Animações e imagens com várias páginas são recusadas para não descartar quadros.';
+  else if (!['uchar', 'ushort'].includes(metadata.depth)) reason = `Profundidade de cor ${metadata.depth} não pode ser preservada com segurança.`;
+  else if (!LOSSLESS_SPACES.includes(metadata.space)) reason = `Espaço de cor ${metadata.space} não pode ser preservado com segurança.`;
+  else if (!targets.length) reason = 'Nenhum formato de saída compatível e sem perda está disponível para esta imagem.';
+  return {
+    width: metadata.width,
+    height: metadata.height,
+    channels: metadata.channels,
+    depth: metadata.depth,
+    space: metadata.space,
+    pages: metadata.pages || 1,
+    targets,
+    reason
+  };
+}
 
 function compareVersions(a, b) {
   const parse = (version) => {
@@ -280,6 +348,44 @@ ipcMain.handle('writeNext', (e, orig, ext, buf) => {
   fs.writeFileSync(out, Buffer.from(buf));
   return out;
 });
-ipcMain.handle('getPrefs', () => prefs);
-ipcMain.handle('setFormat', (e, f) => { prefs.format = f; savePrefs(); });
+ipcMain.handle('getImageConverterFormats', () => ({
+  extensions: getSupportedImageExtensions(),
+  outputs: LOSSLESS_FORMATS
+    .filter((format) => sharp.format[format.id] && sharp.format[format.id].output.file)
+    .map(({ id, label }) => ({ id, label }))
+}));
+ipcMain.handle('getLosslessImageInfo', (e, filePath) => getLosslessImageInfo(filePath));
+ipcMain.handle('convertLosslessImage', async (e, filePath, formatId) => {
+  const info = await getLosslessImageInfo(filePath);
+  if (!info.targets.some((target) => target.id === formatId)) {
+    throw new Error(info.reason || 'Este formato de saída não preserva os dados da imagem.');
+  }
+  let image = sharp(filePath).keepMetadata();
+  image = image.toColourspace(info.space);
+  if (formatId === 'png') {
+    image = image.png({ compressionLevel: 9, bitdepth: info.depth === 'ushort' ? 16 : 8, palette: false });
+  } else if (formatId === 'tiff') {
+    image = image.tiff({ compression: 'none' });
+  } else if (formatId === 'webp') {
+    image = image.webp({ lossless: true, effort: 6 });
+  } else {
+    throw new Error('Formato de saída inválido.');
+  }
+  const { data, info: outputInfo } = await image.toBuffer({ resolveWithObject: true });
+  const outputMetadata = await sharp(data).metadata();
+  if (
+    outputInfo.width !== info.width ||
+    outputInfo.height !== info.height ||
+    outputInfo.channels !== info.channels ||
+    outputMetadata.depth !== info.depth
+  ) {
+    throw new Error('A saída não preservou as dimensões e a profundidade de cor originais.');
+  }
+  return {
+    data: new Uint8Array(data),
+    size: outputInfo.size,
+    width: outputInfo.width,
+    height: outputInfo.height
+  };
+});
 ipcMain.handle('closePopup', () => { if (popup) popup.close(); });

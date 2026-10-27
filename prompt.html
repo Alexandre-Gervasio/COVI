@@ -12,6 +12,7 @@ h1{font-size:17px;margin:0 0 4px}
 #nm{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:14px}
 label{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:16px}
 select{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.note{margin:0 0 14px;color:var(--mut);font-size:12px}
 .row{display:flex;gap:8px}
 button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 14px;background:var(--ac);color:var(--act);cursor:pointer;flex:1}
 button.g{background:transparent;color:var(--ac);border:1px solid var(--bd)}
@@ -23,9 +24,10 @@ button:disabled{opacity:.5}
 <body>
 <h1 id="t">Foto HEIC detectada</h1>
 <div id="nm"></div>
-<label>Converter para
-  <select id="fmt"><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
+<label>Formato de saída
+  <select id="fmt"><option value="png">PNG (sem perda adicional)</option><option value="jpg">JPG (pode reduzir a qualidade)</option></select>
 </label>
+<p class="note">PNG preserva os pixels decodificados. JPG pode reduzir a qualidade.</p>
 <div class="row"><button id="go">Converter</button><button id="no" class="g">Agora não</button></div>
 <div id="st"></div>
 <script src="node_modules/heic2any/dist/heic2any.min.js"></script>
@@ -36,31 +38,31 @@ var files=JSON.parse(new URLSearchParams(location.search).get('files')||'[]');
 var base=function(p){return p.split(/[\\/]/).pop()};
 $('t').textContent=files.length>1?files.length+' fotos HEIC baixadas':'Foto HEIC baixada';
 $('nm').textContent=files.length>1?files.map(base).join(', '):base(files[0]||'');
-window.api.getPrefs().then(function(p){$('fmt').value=p.format||'jpg'});
 $('no').onclick=function(){window.api.closePopup()};
 
-function toBlob(c,t,qa){return new Promise(function(r){c.toBlob(r,t,qa)})}
-async function conv(p,f){
-  var type=f==='jpg'?'image/jpeg':f==='png'?'image/png':'image/webp';
+function toBlob(canvas,type,quality){return new Promise(function(resolve){canvas.toBlob(resolve,type,quality)})}
+async function conv(p,format){
   var buf=await window.api.readFile(p);
   var res=await heic2any({blob:new Blob([buf]),toType:'image/png'});
   var png=Array.isArray(res)?res[0]:res;
-  if(f==='png')return png;
+  if(format==='png')return png;
   var bmp=await createImageBitmap(png);
-  var c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
-  var x=c.getContext('2d');
-  if(f==='jpg'){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
-  x.drawImage(bmp,0,0);
-  return await toBlob(c,type,0.92);
+  var canvas=document.createElement('canvas');canvas.width=bmp.width;canvas.height=bmp.height;
+  var context=canvas.getContext('2d');
+  context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);
+  context.drawImage(bmp,0,0);
+  var jpg=await toBlob(canvas,'image/jpeg',0.92);
+  if(bmp.close)bmp.close();
+  if(!jpg)throw new Error('Falha ao gerar o arquivo JPG.');
+  return jpg;
 }
 $('go').onclick=async function(){
-  var f=$('fmt').value;
+  var format=$('fmt').value;
   $('go').disabled=true;$('no').disabled=true;$('fmt').disabled=true;
-  window.api.setFormat(f);
   var ok=0,err=0;
   for(var i=0;i<files.length;i++){
     $('st').className='';$('st').textContent='Convertendo '+(i+1)+' de '+files.length+'…';
-    try{var b=await conv(files[i],f);await window.api.writeNext(files[i],f,await b.arrayBuffer());ok++}catch(e){err++}
+    try{var b=await conv(files[i],format);await window.api.writeNext(files[i],format,await b.arrayBuffer());ok++}catch(e){err++}
   }
   $('st').className=err?'er':'ok';
   $('st').textContent=ok+' convertida(s) na pasta Downloads'+(err?' · '+err+' com erro':'');

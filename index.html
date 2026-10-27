@@ -14,9 +14,15 @@ p.brand-name{color:var(--mut);margin:0;font-size:14px}
 p.tagline{font-weight:600;margin:8px 0 2px}
 p.s{color:var(--mut);margin:0 0 16px;font-size:14px}
 #drop{border:2px dashed var(--bd);background:var(--card);border-radius:16px;padding:28px 16px;text-align:center;cursor:pointer}
-#drop.on{border-color:var(--ac)}
-#drop b{display:block;font-size:17px;margin-bottom:4px}
-#drop span{color:var(--mut);font-size:14px}
+#drop.on,#general-drop.on{border-color:var(--ac)}
+#drop b,#general-drop b{display:block;font-size:17px;margin-bottom:4px}
+#drop span,#general-drop span{color:var(--mut);font-size:14px}
+.tabs{display:flex;gap:8px;margin:18px 0 16px;border-bottom:1px solid var(--bd)}
+.tabs button{border-radius:10px 10px 0 0;background:transparent;color:var(--mut);border-bottom:2px solid transparent}
+.tabs button[aria-selected=true]{color:var(--ac);border-bottom-color:var(--ac)}
+.hint{font-size:13px;color:var(--mut);margin:10px 0}
+.tab-panel[hidden]{display:none}
+#general-drop{border:2px dashed var(--bd);background:var(--card);border-radius:16px;padding:28px 16px;text-align:center;cursor:pointer}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;align-items:end}
 label{display:flex;flex-direction:column;font-size:13px;color:var(--mut);gap:4px;flex:1;min-width:130px}
 select,input[type=range]{width:100%;font:inherit;color:var(--tx)}
@@ -39,15 +45,17 @@ li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px so
 <h1>C.O.V.I.</h1>
 <p class="brand-name">Conversor Otimizado de Vários formatos de Imagem</p>
 <p class="tagline">Converta. Simplifique. Pronto.</p>
-<p class="s">Converta fotos do iPhone para JPG, PNG ou WebP. Tudo acontece no seu computador, nada é enviado.</p>
+<div class="tabs" role="tablist" aria-label="Tipo de conversão">
+  <button id="tab-heic" role="tab" aria-selected="true" aria-controls="heic-panel">HEIC / HEIF</button>
+  <button id="tab-general" role="tab" aria-selected="false" aria-controls="general-panel">Outros formatos</button>
+</div>
+<section id="heic-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-heic">
+<p class="s">Escolha JPG ou PNG para suas fotos HEIC/HEIF. JPG pode reduzir a qualidade; PNG preserva os pixels decodificados. Os arquivos são processados no seu computador.</p>
 <div id="drop" tabindex="0"><b>Clique ou arraste suas fotos .heic</b><span>Você pode escolher vários arquivos</span></div>
 <input id="file" type="file" accept=".heic,.heif,image/heic,image/heif" multiple hidden>
 <div class="row">
-  <label>Formato
-    <select id="fmt"><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
-  </label>
-  <label id="qw">Qualidade: <span id="qv">90</span>%
-    <input id="q" type="range" min="40" max="100" value="90">
+  <label>Formato de saída
+    <select id="heic-fmt"><option value="png">PNG (sem perda adicional)</option><option value="jpg">JPG (pode reduzir a qualidade)</option></select>
   </label>
 </div>
 <div class="row" style="margin-top:0">
@@ -57,13 +65,32 @@ li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px so
 </div>
 <ul id="list"></ul>
 <div id="msg"></div>
+</section>
+<section id="general-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-general" hidden>
+  <p class="s">Converta formatos raster compatíveis sem recompressão com perda. Os arquivos originais nunca são alterados.</p>
+  <div id="general-drop" tabindex="0"><b>Selecione ou arraste imagens</b><span id="general-formats">Verificando formatos compatíveis…</span></div>
+  <input id="general-file" type="file" multiple hidden>
+  <p class="hint">PNG, TIFF sem compressão e WebP lossless são oferecidos apenas quando podem preservar a imagem. Animações, profundidades e espaços de cor incompatíveis são recusados para evitar perda de dados.</p>
+  <div class="row">
+    <label>Formato de saída
+      <select id="general-fmt"></select>
+    </label>
+  </div>
+  <div class="row" style="margin-top:0">
+    <button id="general-go" disabled>Converter</button>
+    <button id="general-all" class="g" disabled>Salvar todos…</button>
+    <button id="general-clear" class="g" disabled>Limpar</button>
+  </div>
+  <ul id="general-list"></ul>
+  <div id="general-msg" class="hint"></div>
+</section>
 </main>
 <script src="node_modules/heic2any/dist/heic2any.min.js"></script>
 <script>
 (function(){
 var $=function(i){return document.getElementById(i)};
 var items=[],busy=false;
-var drop=$('drop'),file=$('file'),fmt=$('fmt'),q=$('q'),list=$('list'),msg=$('msg');
+var drop=$('drop'),file=$('file'),heicFormat=$('heic-fmt'),list=$('list'),msg=$('msg');
 
 drop.onclick=function(){file.click()};
 drop.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click()}};
@@ -71,8 +98,6 @@ drop.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();f
 ['dragleave','drop'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.remove('on')})});
 drop.addEventListener('drop',function(e){add(e.dataTransfer.files)});
 file.onchange=function(){add(file.files);file.value=''};
-q.oninput=function(){$('qv').textContent=q.value};
-fmt.onchange=function(){$('qw').style.display=fmt.value==='png'?'none':'flex'};
 
 function add(fs){
   Array.prototype.forEach.call(fs,function(f){
@@ -104,37 +129,40 @@ function render(){
   $('go').disabled=!has||busy;
   $('all').disabled=!done||busy;
   $('clr').disabled=!has||busy;
+  heicFormat.disabled=busy;
 }
 
-function toBlob(c,type,qual){return new Promise(function(r){c.toBlob(r,type,qual)})}
+function toBlob(canvas,type,quality){
+  return new Promise(function(resolve){canvas.toBlob(resolve,type,quality)});
+}
 
-async function convert(it){
-  var type=fmt.value==='jpg'?'image/jpeg':fmt.value==='png'?'image/png':'image/webp';
+async function convert(it,format){
   var res=await heic2any({blob:it.f,toType:'image/png'});
   var png=Array.isArray(res)?res[0]:res;
   var bmp=await createImageBitmap(png);
   var c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
   var x=c.getContext('2d');
-  if(type==='image/jpeg'){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
+  if(format==='jpg'){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
   x.drawImage(bmp,0,0);
-  var out=type==='image/png'?png:await toBlob(c,type,q.value/100);
+  var out=format==='jpg'?await toBlob(c,'image/jpeg',0.92):png;
   if(!out)throw new Error('falha ao gerar a imagem');
   var t=document.createElement('canvas'),sc=112/Math.min(bmp.width,bmp.height);
   t.width=Math.max(1,Math.round(bmp.width*sc));t.height=Math.max(1,Math.round(bmp.height*sc));
   t.getContext('2d').drawImage(bmp,0,0,t.width,t.height);
   it.thumb=t.toDataURL('image/jpeg',.7);
   it.out=out;
-  it.name=it.f.name.replace(/\.[^.]+$/,'')+'.'+fmt.value;
+  it.name=it.f.name.replace(/\.[^.]+$/,'')+'.'+format;
   it.state='Pronto · '+(out.size/1048576).toFixed(2)+' MB';it.cls='ok';
   if(bmp.close)bmp.close();
 }
 
 $('go').onclick=async function(){
+  var format=heicFormat.value;
   busy=true;msg.textContent='';render();
   for(var i=0;i<items.length;i++){
     var it=items[i];
     it.out=null;it.state='Convertendo…';it.cls='';render();
-    try{await convert(it)}catch(e){it.state='Erro: '+(e&&e.message?e.message:'falha ao converter');it.cls='er'}
+    try{await convert(it,format)}catch(e){it.state='Erro: '+(e&&e.message?e.message:'falha ao converter');it.cls='er'}
     render();
   }
   busy=false;render();
@@ -154,6 +182,165 @@ $('all').onclick=async function(){
 
 $('clr').onclick=function(){items=[];msg.textContent='';render()};
 render();
+
+var generalItems=[],generalBusy=false,generalExtensions=[],generalFormatsLoaded=false;
+var generalDrop=$('general-drop'),generalFile=$('general-file');
+var generalList=$('general-list'),generalFormat=$('general-fmt'),generalMsg=$('general-msg');
+var outputLabels={png:'PNG (sem perda)',tiff:'TIFF sem compressão',webp:'WebP lossless'};
+var tabHeic=$('tab-heic'),tabGeneral=$('tab-general');
+
+function selectTab(name){
+  var isHeic=name==='heic';
+  $('heic-panel').hidden=!isHeic;
+  $('general-panel').hidden=isHeic;
+  tabHeic.setAttribute('aria-selected',String(isHeic));
+  tabGeneral.setAttribute('aria-selected',String(!isHeic));
+}
+tabHeic.onclick=function(){selectTab('heic')};
+tabGeneral.onclick=function(){selectTab('general')};
+
+function updateGeneralFormats(){
+  var ready=generalItems.filter(function(item){return item.info&&item.info.targets.length});
+  var analyzing=generalItems.some(function(item){return item.state==='Analisando imagem…'});
+  var compatible=Object.keys(outputLabels).filter(function(format){
+    return ready.length&&ready.every(function(item){
+      return item.info.targets.some(function(target){return target.id===format});
+    });
+  });
+  var previous=generalFormat.value;
+  generalFormat.innerHTML='';
+  compatible.forEach(function(format){
+    var option=document.createElement('option');
+    option.value=format;
+    option.textContent=outputLabels[format];
+    generalFormat.appendChild(option);
+  });
+  if(compatible.indexOf(previous)!==-1)generalFormat.value=previous;
+  else if(compatible.indexOf('png')!==-1)generalFormat.value='png';
+  $('general-go').disabled=!ready.length||!compatible.length||generalBusy||analyzing;
+}
+
+function renderGeneral(){
+  generalList.innerHTML='';
+  generalItems.forEach(function(item){
+    var li=document.createElement('li');
+    var details=document.createElement('div');details.className='in';
+    var name=document.createElement('div');name.className='nm';name.textContent=item.file.name;
+    var state=document.createElement('div');state.className='st '+item.cls;state.textContent=item.state;
+    details.appendChild(name);details.appendChild(state);li.appendChild(details);
+    if(item.output){
+      var saveButton=document.createElement('button');saveButton.textContent='Salvar';
+      saveButton.onclick=function(){saveGeneral(item)};
+      li.appendChild(saveButton);
+    }
+    generalList.appendChild(li);
+  });
+  updateGeneralFormats();
+  var done=generalItems.some(function(item){return item.output});
+  $('general-all').disabled=!done||generalBusy;
+  $('general-clear').disabled=!generalItems.length||generalBusy;
+}
+
+function addGeneral(files){
+  if(generalBusy){generalMsg.textContent='Aguarde a conversão atual terminar antes de adicionar arquivos.';return}
+  if(!generalFormatsLoaded){generalMsg.textContent='Aguarde a lista de formatos compatíveis carregar.';return}
+  generalMsg.textContent='';
+  Array.prototype.forEach.call(files,function(file){
+    var extension=(file.name.match(/\.([^.]+)$/)||[])[1];
+    if(!extension||generalExtensions.indexOf(extension.toLowerCase())===-1){
+      generalMsg.textContent='Um ou mais arquivos foram ignorados: formato não suportado nesta instalação.';
+      return;
+    }
+    var filePath;
+    try{filePath=window.api.getPathForFile(file)}
+    catch(error){generalMsg.textContent='Não foi possível acessar o arquivo: '+error.message;return}
+    var item={file:file,path:filePath,info:null,output:null,name:'',state:'Analisando imagem…',cls:''};
+    generalItems.push(item);
+    window.api.getLosslessImageInfo(item.path).then(function(info){
+      item.info=info;
+      item.state=info.targets.length
+        ?info.width+' × '+info.height+' · '+info.depth
+        :info.reason;
+      item.cls=info.targets.length?'':'er';
+    }).catch(function(error){
+      item.state='Não foi possível ler: '+error.message;
+      item.cls='er';
+    }).finally(renderGeneral);
+  });
+  renderGeneral();
+}
+
+generalDrop.onclick=function(){generalFile.click()};
+generalDrop.onkeydown=function(event){if(event.key==='Enter'||event.key===' '){event.preventDefault();generalFile.click()}};
+['dragover','dragenter'].forEach(function(name){
+  generalDrop.addEventListener(name,function(event){event.preventDefault();generalDrop.classList.add('on')});
+});
+['dragleave','drop'].forEach(function(name){
+  generalDrop.addEventListener(name,function(event){event.preventDefault();generalDrop.classList.remove('on')});
+});
+generalDrop.addEventListener('drop',function(event){addGeneral(event.dataTransfer.files)});
+generalFile.onchange=function(){addGeneral(generalFile.files);generalFile.value=''};
+
+$('general-go').onclick=async function(){
+  var format=generalFormat.value;
+  generalBusy=true;generalMsg.textContent='';renderGeneral();
+  for(var i=0;i<generalItems.length;i++){
+    var item=generalItems[i];
+    if(!item.info||!item.info.targets.some(function(target){return target.id===format}))continue;
+    item.output=null;item.state='Convertendo sem perda…';item.cls='';renderGeneral();
+    try{
+      var result=await window.api.convertLosslessImage(item.path,format);
+      item.output=result.data;
+      item.name=item.file.name.replace(/\.[^.]+$/,'')+'.'+format;
+      item.state='Pronto · '+(result.size/1048576).toFixed(2)+' MB';
+      item.cls='ok';
+    }catch(error){item.state='Erro: '+error.message;item.cls='er'}
+    renderGeneral();
+  }
+  generalBusy=false;renderGeneral();
+};
+
+async function saveGeneral(item){
+  try{
+    var ok=await window.api.save(item.name,item.output.buffer.slice(
+      item.output.byteOffset,item.output.byteOffset+item.output.byteLength
+    ));
+    generalMsg.textContent=ok?'Arquivo salvo.':'';
+  }catch(error){generalMsg.textContent='Não foi possível salvar: '+error.message}
+}
+
+$('general-all').onclick=async function(){
+  try{
+    var files=[];
+    for(var i=0;i<generalItems.length;i++){
+      var item=generalItems[i];
+      if(item.output)files.push({name:item.name,buf:item.output.buffer.slice(
+        item.output.byteOffset,item.output.byteOffset+item.output.byteLength
+      )});
+    }
+    var count=await window.api.saveAll(files);
+    generalMsg.textContent=count?count+' arquivo(s) salvo(s).':'';
+  }catch(error){
+    generalMsg.textContent='Não foi possível salvar os arquivos: '+error.message;
+  }
+};
+
+$('general-clear').onclick=function(){generalItems=[];generalMsg.textContent='';renderGeneral()};
+window.api.getImageConverterFormats().then(function(formats){
+  generalFormatsLoaded=true;
+  generalExtensions=formats.extensions;
+  generalFile.accept=generalExtensions.map(function(extension){return '.'+extension}).join(',');
+  $('general-formats').textContent='Entradas compatíveis: '+generalExtensions.map(function(extension){return '.'+extension}).join(', ');
+  var available=formats.outputs.map(function(format){return format.id});
+  generalFormat.innerHTML='';
+  ['png','tiff','webp'].filter(function(format){return available.indexOf(format)!==-1}).forEach(function(format){
+    var option=document.createElement('option');
+    option.value=format;option.textContent=outputLabels[format];generalFormat.appendChild(option);
+  });
+}).catch(function(error){
+  generalFormatsLoaded=true;
+  $('general-formats').textContent='Não foi possível carregar os formatos: '+error.message;
+});
 })();
 </script>
 </body>

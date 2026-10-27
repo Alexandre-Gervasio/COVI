@@ -4,7 +4,7 @@
 
 **Converta. Simplifique. Pronto.**
 
-Converta fotos HEIC e HEIF do iPhone para **JPG**, **PNG** ou **WebP**. O C.O.V.I.
+Converta fotos HEIC e HEIF do iPhone para **PNG** ou **JPG**. O C.O.V.I.
 funciona offline: seus arquivos são processados no próprio computador e os
 originais são preservados.
 
@@ -16,11 +16,19 @@ Baixe o instalador para seu sistema operacional na página de
 ## Recursos
 
 - Converta uma ou várias fotos de uma só vez.
-- Escolha o formato de saída e ajuste a qualidade.
+- Escolha PNG para preservar os pixels decodificados ou JPG, que pode reduzir
+  a qualidade por usar compressão com perda.
+- Use a segunda aba para converter imagens raster compatíveis para PNG, TIFF
+  sem compressão ou WebP lossless.
 - Use o monitoramento da pasta Downloads para receber um aviso quando novas
   fotos HEIC/HEIF forem baixadas.
 - Mantenha os arquivos originais: as conversões são salvas como cópias.
 - Receba avisos quando uma nova versão do C.O.V.I. estiver disponível.
+
+Na segunda aba, a lista de entradas é determinada pelos decodificadores
+incluídos na versão e pode variar por sistema operacional. Arquivos animados,
+com várias páginas ou com profundidade/espaço de cor não preservável são
+recusados. As saídas com perda, como JPEG, não são oferecidas.
 
 ## Atualizações
 
