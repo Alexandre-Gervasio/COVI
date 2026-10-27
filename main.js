@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, Notificati
 const https = require('https');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const sharp = require('sharp');
 
@@ -12,6 +13,18 @@ const RELEASES_API = 'https://api.github.com/repos/Alexandre-Gervasio/COVI/relea
 const RELEASES_PAGE = 'https://github.com/Alexandre-Gervasio/COVI/releases/latest';
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
 const LOSSLESS_SPACES = ['srgb', 'rgb', 'rgb16', 'b-w', 'grey16'];
+const LOSSLESS_FORMATS = [
+  { id: 'png', encoder: 'png', extension: 'png', label: 'PNG (sem perda)', spaces: LOSSLESS_SPACES },
+  { id: 'tiff', encoder: 'tiff', extension: 'tiff', label: 'TIFF sem compressão' },
+  { id: 'webp', encoder: 'webp', extension: 'webp', label: 'WebP lossless', spaces: ['srgb'], depth: 'uchar' },
+  { id: 'avif-lossless', encoder: 'heif', extension: 'avif', label: 'AVIF lossless', spaces: ['srgb'], depth: 'uchar' }
+];
+const LOSSY_FORMATS = [
+  { id: 'jpg', encoder: 'jpeg', extension: 'jpg', label: 'JPG (com perda)' },
+  { id: 'webp-lossy', encoder: 'webp', extension: 'webp', label: 'WebP (com perda)' },
+  { id: 'avif', encoder: 'heif', extension: 'avif', label: 'AVIF (com perda)' },
+  { id: 'gif', encoder: 'gif', extension: 'gif', label: 'GIF (com perda, até 256 cores)' }
+];
 const INPUT_FORMATS = {
   jpeg: ['jpg', 'jpeg', 'jpe'],
   png: ['png'],
@@ -20,12 +33,7 @@ const INPUT_FORMATS = {
   gif: ['gif'],
   heif: ['heic', 'heif', 'hif', 'avif'],
 };
-const LOSSLESS_FORMATS = [
-  { id: 'png', label: 'PNG (sem perda)', extensions: ['srgb', 'rgb', 'rgb16', 'b-w', 'grey16'] },
-  { id: 'tiff', label: 'TIFF sem compressão' },
-  { id: 'webp', label: 'WebP lossless', extensions: ['srgb'] }
-];
-let prefs = { watch: true };
+let prefs = { watch: true, autoStart: true };
 let win = null, tray = null, popup = null, quitting = false, watcher = null;
 let known = new Set(), pending = [], flushTimer = null, queue = [];
 let updateCheckTimer = null, updateCheckInProgress = false, releaseCheckInProgress = false;
@@ -34,6 +42,49 @@ let manualUpdateCheck = false, updateReadyVersion = null;
 function loadPrefs() { try { prefs = { ...prefs, ...JSON.parse(fs.readFileSync(prefsFile(), 'utf8')) }; } catch (e) {} }
 function savePrefs() { try { fs.writeFileSync(prefsFile(), JSON.stringify(prefs)); } catch (e) {} }
 const webPrefs = { preload: path.join(__dirname, 'preload.js') };
+
+function quoteDesktopExec(value) {
+  return `"${value.replace(/([\\`"$])/g, '\\$1').replace(/%/g, '%%')}"`;
+}
+
+function setAutoStart(enabled) {
+  if (!app.isPackaged) return;
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({ openAtLogin: enabled, args: ['--hidden'] });
+    return;
+  }
+
+  const folder = path.join(app.getPath('home'), '.config', 'autostart');
+  const entry = path.join(folder, 'com.alexandre.conversorheic.desktop');
+  if (!enabled) {
+    if (fs.existsSync(entry)) fs.unlinkSync(entry);
+    return;
+  }
+
+  fs.mkdirSync(folder, { recursive: true });
+  const executable = process.env.APPIMAGE && fs.existsSync(process.env.APPIMAGE)
+    ? process.env.APPIMAGE
+    : app.getPath('exe');
+  const contents = [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=C.O.V.I.',
+    `Exec=${quoteDesktopExec(executable)} --hidden`,
+    'Terminal=false',
+    'X-GNOME-Autostart-enabled=true',
+    ''
+  ].join('\n');
+  const temporary = `${entry}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  fs.writeFileSync(temporary, contents, { flag: 'wx' });
+  try {
+    fs.renameSync(temporary, entry);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch (cleanupError) {
+      console.error('Não foi possível remover o arquivo temporário de inicialização:', cleanupError);
+    }
+    throw error;
+  }
+}
 
 function getSupportedImageExtensions() {
   return Object.entries(INPUT_FORMATS)
@@ -49,19 +100,22 @@ function getInputFormat(filePath) {
   )?.[0];
 }
 
+function getAvailableFormats(formats) {
+  return formats.filter((format) => sharp.format[format.encoder]?.output.file);
+}
+
 function getLosslessTargets(metadata) {
   if ((metadata.pages || 1) > 1) return [];
   if (!['uchar', 'ushort'].includes(metadata.depth)) return [];
   if (!LOSSLESS_SPACES.includes(metadata.space)) return [];
-  return LOSSLESS_FORMATS
-    .filter((format) => sharp.format[format.id] && sharp.format[format.id].output.file && (format.id === 'tiff' || (
-      (!format.extensions || format.extensions.includes(metadata.space)) &&
-      (format.id !== 'webp' || (metadata.depth === 'uchar' && !metadata.hasAlpha))
-    )))
+  return getAvailableFormats(LOSSLESS_FORMATS)
+    .filter((format) => (!format.spaces || format.spaces.includes(metadata.space)) &&
+      (!format.depth || format.depth === metadata.depth) &&
+      (format.id !== 'tiff' || ['uchar', 'ushort'].includes(metadata.depth)))
     .map(({ id, label }) => ({ id, label }));
 }
 
-async function getLosslessImageInfo(filePath) {
+async function getImageConversionInfo(filePath) {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     throw new Error('Caminho de arquivo inválido.');
   }
@@ -70,7 +124,10 @@ async function getLosslessImageInfo(filePath) {
   const stat = await fs.promises.stat(filePath);
   if (!stat.isFile()) throw new Error('O caminho selecionado não é um arquivo.');
   const metadata = await sharp(filePath, { animated: true }).metadata();
-  const targets = getLosslessTargets(metadata);
+  const losslessTargets = getLosslessTargets(metadata);
+  const targets = (metadata.pages || 1) > 1 || !['uchar', 'ushort'].includes(metadata.depth)
+    ? losslessTargets
+    : losslessTargets.concat(getAvailableFormats(LOSSY_FORMATS).map(({ id, label }) => ({ id, label })));
   let reason = '';
   if ((metadata.pages || 1) > 1) reason = 'Animações e imagens com várias páginas são recusadas para não descartar quadros.';
   else if (!['uchar', 'ushort'].includes(metadata.depth)) reason = `Profundidade de cor ${metadata.depth} não pode ser preservada com segurança.`;
@@ -82,10 +139,65 @@ async function getLosslessImageInfo(filePath) {
     channels: metadata.channels,
     depth: metadata.depth,
     space: metadata.space,
+    hasAlpha: metadata.hasAlpha,
     pages: metadata.pages || 1,
+    losslessTargets,
     targets,
     reason
   };
+}
+
+function writeAtomically(filePath, contents) {
+  const temporary = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`
+  );
+  try {
+    fs.writeFileSync(temporary, contents, { flag: 'wx' });
+    fs.renameSync(temporary, filePath);
+  } catch (error) {
+    if (fs.existsSync(temporary)) {
+      try { fs.unlinkSync(temporary); } catch (cleanupError) {
+        console.error('Não foi possível remover o arquivo temporário de conversão:', cleanupError);
+      }
+    }
+    throw error;
+  }
+}
+
+function replaceOriginal(filePath, extension, contents) {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+    throw new Error('Caminho de arquivo inválido.');
+  }
+  const allowedFormats = [...LOSSLESS_FORMATS, ...LOSSY_FORMATS];
+  if (!allowedFormats.some((format) => format.extension === extension)) {
+    throw new Error('Formato de saída inválido.');
+  }
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) throw new Error('O caminho selecionado não é um arquivo.');
+
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath, path.extname(filePath));
+  const normalize = (candidate) => process.platform === 'win32'
+    ? path.resolve(candidate).toLowerCase()
+    : path.resolve(candidate);
+  const sameFile = (candidate) => normalize(candidate) === normalize(filePath);
+  let destination = path.join(dir, `${base}.${extension}`);
+  const replacingInPlace = sameFile(destination);
+  let suffix = 1;
+  while (!replacingInPlace && fs.existsSync(destination)) {
+    destination = path.join(dir, `${base} (${suffix++}).${extension}`);
+  }
+
+  writeAtomically(destination, Buffer.from(contents));
+  if (!replacingInPlace) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      throw new Error(`A conversão foi salva em ${destination}, mas o original não pôde ser removido: ${error.message}`);
+    }
+  }
+  return destination;
 }
 
 function compareVersions(a, b) {
@@ -298,13 +410,20 @@ function buildMenu() {
     { label: 'Verificar atualizações', click: () => checkForUpdates(true) },
     ...(updateReadyVersion ? [{ label: `Reiniciar para atualizar para ${updateReadyVersion}`, click: () => autoUpdater.quitAndInstall(false, true) }] : []),
     { label: 'Avisar quando baixar fotos HEIC', type: 'checkbox', checked: prefs.watch,
-      click: (m) => { prefs.watch = m.checked; savePrefs(); startWatch(); } }
+      click: (m) => { prefs.watch = m.checked; savePrefs(); startWatch(); } },
+    { label: 'Iniciar com o sistema', type: 'checkbox', checked: prefs.autoStart,
+      click: (m) => {
+        try {
+          setAutoStart(m.checked);
+          prefs.autoStart = m.checked;
+          savePrefs();
+        } catch (error) {
+          console.error('Não foi possível alterar a inicialização automática do C.O.V.I.:', error);
+          showNotice('Falha ao alterar a inicialização automática', 'Verifique as permissões do usuário e tente novamente.');
+        }
+        buildMenu();
+      } }
   ];
-  if (process.platform !== 'linux') {
-    items.push({ label: 'Iniciar com o sistema', type: 'checkbox',
-      checked: app.getLoginItemSettings().openAtLogin,
-      click: (m) => app.setLoginItemSettings({ openAtLogin: m.checked, args: ['--hidden'] }) });
-  }
   items.push({ type: 'separator' }, { label: 'Sair', click: () => { quitting = true; app.quit(); } });
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
@@ -315,11 +434,18 @@ app.on('second-instance', openMain);
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('com.alexandre.conversorheic');
   loadPrefs();
+  try {
+    setAutoStart(prefs.autoStart);
+  } catch (error) {
+    console.error('Não foi possível ativar a inicialização automática do C.O.V.I.:', error);
+    showNotice('Falha ao ativar a inicialização automática', 'Você pode ativá-la depois pelo menu da bandeja.');
+  }
   tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 18, height: 18 }));
   tray.setToolTip('C.O.V.I.');
   tray.on('click', openMain);
   buildMenu();
-  const hidden = process.argv.includes('--hidden') || app.getLoginItemSettings().wasOpenedAtLogin;
+  const hidden = process.argv.includes('--hidden') ||
+    (process.platform !== 'linux' && app.getLoginItemSettings().wasOpenedAtLogin);
   if (!hidden) openMain();
   startWatch();
   startUpdateChecks();
@@ -348,38 +474,55 @@ ipcMain.handle('writeNext', (e, orig, ext, buf) => {
   fs.writeFileSync(out, Buffer.from(buf));
   return out;
 });
+ipcMain.handle('replaceOriginal', (e, filePath, extension, contents) => replaceOriginal(filePath, extension, contents));
 ipcMain.handle('getImageConverterFormats', () => ({
   extensions: getSupportedImageExtensions(),
-  outputs: LOSSLESS_FORMATS
-    .filter((format) => sharp.format[format.id] && sharp.format[format.id].output.file)
-    .map(({ id, label }) => ({ id, label }))
+  outputs: [...getAvailableFormats(LOSSLESS_FORMATS), ...getAvailableFormats(LOSSY_FORMATS)]
+    .map(({ id, label, extension }) => ({ id, label, extension }))
 }));
-ipcMain.handle('getLosslessImageInfo', (e, filePath) => getLosslessImageInfo(filePath));
-ipcMain.handle('convertLosslessImage', async (e, filePath, formatId) => {
-  const info = await getLosslessImageInfo(filePath);
-  if (!info.targets.some((target) => target.id === formatId)) {
-    throw new Error(info.reason || 'Este formato de saída não preserva os dados da imagem.');
+ipcMain.handle('getImageConversionInfo', (e, filePath) => getImageConversionInfo(filePath));
+ipcMain.handle('convertImage', async (e, filePath, formatId) => {
+  const info = await getImageConversionInfo(filePath);
+  const format = [...LOSSLESS_FORMATS, ...LOSSY_FORMATS].find(({ id }) => id === formatId);
+  if (!format || !info.targets.some((target) => target.id === formatId)) {
+    throw new Error(info.reason || 'Este formato de saída não está disponível para esta imagem.');
   }
   let image = sharp(filePath).keepMetadata();
-  image = image.toColourspace(info.space);
+  const lossless = LOSSLESS_FORMATS.some(({ id }) => id === formatId);
+  if (lossless) image = image.toColourspace(info.space);
   if (formatId === 'png') {
     image = image.png({ compressionLevel: 9, bitdepth: info.depth === 'ushort' ? 16 : 8, palette: false });
   } else if (formatId === 'tiff') {
     image = image.tiff({ compression: 'none' });
   } else if (formatId === 'webp') {
-    image = image.webp({ lossless: true, effort: 6 });
-  } else {
-    throw new Error('Formato de saída inválido.');
+    image = image.webp({ lossless: true, effort: 6, exact: true });
+  } else if (formatId === 'avif-lossless') {
+    image = image.avif({ lossless: true, effort: 4, bitdepth: 8 });
+  } else if (formatId === 'jpg') {
+    image = image.flatten({ background: '#ffffff' }).jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true });
+  } else if (formatId === 'webp-lossy') {
+    image = image.webp({ quality: 90, alphaQuality: 100, effort: 6 });
+  } else if (formatId === 'avif') {
+    image = image.avif({ quality: 90, effort: 4 });
+  } else if (formatId === 'gif') {
+    image = image.gif({ colours: 256, effort: 7 });
   }
   const { data, info: outputInfo } = await image.toBuffer({ resolveWithObject: true });
-  const outputMetadata = await sharp(data).metadata();
-  if (
-    outputInfo.width !== info.width ||
-    outputInfo.height !== info.height ||
-    outputInfo.channels !== info.channels ||
-    outputMetadata.depth !== info.depth
-  ) {
-    throw new Error('A saída não preservou as dimensões e a profundidade de cor originais.');
+  if (lossless) {
+    const outputMetadata = await sharp(data).metadata();
+    const [sourcePixels, outputPixels] = await Promise.all([
+      sharp(filePath).raw({ depth: info.depth }).toBuffer(),
+      sharp(data).raw({ depth: info.depth }).toBuffer()
+    ]);
+    if (
+      outputInfo.width !== info.width ||
+      outputInfo.height !== info.height ||
+      outputInfo.channels !== info.channels ||
+      outputMetadata.depth !== info.depth ||
+      !sourcePixels.equals(outputPixels)
+    ) {
+      throw new Error('A saída não preservou exatamente os pixels, as dimensões e a profundidade de cor originais.');
+    }
   }
   return {
     data: new Uint8Array(data),

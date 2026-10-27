@@ -6,8 +6,9 @@ contextBridge.exposeInMainWorld('api', {
   readFile: (p) => i('readFile', p),
   writeNext: (p, ext, b) => i('writeNext', p, ext, b),
   getImageConverterFormats: () => i('getImageConverterFormats'),
-  getLosslessImageInfo: (p) => i('getLosslessImageInfo', p),
-  convertLosslessImage: (p, f) => i('convertLosslessImage', p, f),
+  getImageConversionInfo: (p) => i('getImageConversionInfo', p),
+  convertImage: (p, f) => i('convertImage', p, f),
+  replaceOriginal: (p, ext, b) => i('replaceOriginal', p, ext, b),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   closePopup: () => i('closePopup')
 });

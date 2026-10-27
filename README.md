@@ -6,7 +6,7 @@
 
 Converta fotos HEIC e HEIF do iPhone para **PNG** ou **JPG**. O C.O.V.I.
 funciona offline: seus arquivos são processados no próprio computador e os
-originais são preservados.
+originais são preservados, a menos que você escolha substituí-los.
 
 ## Baixar
 
@@ -19,16 +19,21 @@ Baixe o instalador para seu sistema operacional na página de
 - Escolha PNG para preservar os pixels decodificados ou JPG, que pode reduzir
   a qualidade por usar compressão com perda.
 - Use a segunda aba para converter imagens raster compatíveis para PNG, TIFF
-  sem compressão ou WebP lossless.
+  sem compressão, WebP/AVIF lossless, JPG, WebP, AVIF ou GIF. As opções com
+  perda são identificadas no seletor e variam conforme a imagem e a instalação.
 - Use o monitoramento da pasta Downloads para receber um aviso quando novas
   fotos HEIC/HEIF forem baixadas.
-- Mantenha os arquivos originais: as conversões são salvas como cópias.
+- Inicie o C.O.V.I. automaticamente com a sessão do usuário. Essa opção pode
+  ser alterada pelo menu da bandeja.
+- Nas abas manuais, a opção de substituir o original fica marcada por padrão
+  e pede confirmação; desmarque-a para manter os originais e salvar cópias.
 - Receba avisos quando uma nova versão do C.O.V.I. estiver disponível.
 
 Na segunda aba, a lista de entradas é determinada pelos decodificadores
 incluídos na versão e pode variar por sistema operacional. Arquivos animados,
 com várias páginas ou com profundidade/espaço de cor não preservável são
-recusados. As saídas com perda, como JPEG, não são oferecidas.
+recusados. JPG, GIF, WebP e AVIF com perda podem alterar pixels, cores ou
+transparência; GIF também limita a paleta a 256 cores.
 
 ## Atualizações
 

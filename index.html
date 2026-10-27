@@ -23,6 +23,8 @@ p.s{color:var(--mut);margin:0 0 16px;font-size:14px}
 .hint{font-size:13px;color:var(--mut);margin:10px 0}
 .tab-panel[hidden]{display:none}
 #general-drop{border:2px dashed var(--bd);background:var(--card);border-radius:16px;padding:28px 16px;text-align:center;cursor:pointer}
+.check{display:flex;flex-direction:row;align-items:center;gap:8px;min-width:100%;font-size:13px}
+.check input{margin:0}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;align-items:end}
 label{display:flex;flex-direction:column;font-size:13px;color:var(--mut);gap:4px;flex:1;min-width:130px}
 select,input[type=range]{width:100%;font:inherit;color:var(--tx)}
@@ -58,6 +60,8 @@ li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px so
     <select id="heic-fmt"><option value="png">PNG (sem perda adicional)</option><option value="jpg">JPG (pode reduzir a qualidade)</option></select>
   </label>
 </div>
+<label class="check"><input id="replace-heic" type="checkbox" checked> Substituir os originais após converter</label>
+<p class="hint">A opção remove o HEIC/HEIF somente depois que a conversão terminar com sucesso.</p>
 <div class="row" style="margin-top:0">
   <button id="go" disabled>Converter</button>
   <button id="all" class="g" disabled>Salvar todos…</button>
@@ -67,10 +71,11 @@ li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px so
 <div id="msg"></div>
 </section>
 <section id="general-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-general" hidden>
-  <p class="s">Converta formatos raster compatíveis sem recompressão com perda. Os arquivos originais nunca são alterados.</p>
+  <p class="s">Escolha entre formatos sem perda e formatos com perda. Os originais só são alterados se você mantiver selecionada a opção de substituição.</p>
   <div id="general-drop" tabindex="0"><b>Selecione ou arraste imagens</b><span id="general-formats">Verificando formatos compatíveis…</span></div>
   <input id="general-file" type="file" multiple hidden>
-  <p class="hint">PNG, TIFF sem compressão e WebP lossless são oferecidos apenas quando podem preservar a imagem. Animações, profundidades e espaços de cor incompatíveis são recusados para evitar perda de dados.</p>
+  <label class="check"><input id="replace-general" type="checkbox" checked> Substituir os originais após converter</label>
+  <p class="hint">Os arquivos de origem são removidos apenas após a conversão bem-sucedida. Saídas marcadas “com perda” podem alterar a imagem. Arquivos animados são recusados para não descartar quadros.</p>
   <div class="row">
     <label>Formato de saída
       <select id="general-fmt"></select>
@@ -90,7 +95,7 @@ li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px so
 (function(){
 var $=function(i){return document.getElementById(i)};
 var items=[],busy=false;
-var drop=$('drop'),file=$('file'),heicFormat=$('heic-fmt'),list=$('list'),msg=$('msg');
+var drop=$('drop'),file=$('file'),heicFormat=$('heic-fmt'),replaceHeic=$('replace-heic'),list=$('list'),msg=$('msg');
 
 drop.onclick=function(){file.click()};
 drop.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click()}};
@@ -102,7 +107,9 @@ file.onchange=function(){add(file.files);file.value=''};
 function add(fs){
   Array.prototype.forEach.call(fs,function(f){
     if(!/\.(heic|heif)$/i.test(f.name)&&!/hei[cf]/i.test(f.type)) return;
-    items.push({f:f,out:null,name:'',state:'Na fila',cls:''});
+    var filePath=null,pathError='';
+    try{filePath=window.api.getPathForFile(f)}catch(error){pathError=error.message}
+    items.push({f:f,path:filePath,pathError:pathError,out:null,replaced:false,name:'',state:'Na fila',cls:''});
   });
   render();
 }
@@ -114,22 +121,23 @@ function render(){
     var img=document.createElement('img');img.className='th';img.alt='';
     if(it.thumb)img.src=it.thumb;
     var d=document.createElement('div');d.className='in';
-    var n=document.createElement('div');n.className='nm';n.textContent=it.f.name;
+    var n=document.createElement('div');n.className='nm';n.textContent=it.replaced?it.name:it.f.name;
     var s=document.createElement('div');s.className='st '+it.cls;s.textContent=it.state;
     d.appendChild(n);d.appendChild(s);
     li.appendChild(img);li.appendChild(d);
-    if(it.out){
+    if(it.out&&!it.replaced){
       var b=document.createElement('button');b.textContent='Salvar';
       b.onclick=function(){save(it)};
       li.appendChild(b);
     }
     list.appendChild(li);
   });
-  var has=items.length>0,done=items.some(function(x){return x.out});
-  $('go').disabled=!has||busy;
+  var hasItems=items.length>0,pending=items.some(function(x){return !x.replaced}),done=items.some(function(x){return x.out&&!x.replaced});
+  $('go').disabled=!pending||busy;
   $('all').disabled=!done||busy;
-  $('clr').disabled=!has||busy;
+  $('clr').disabled=!hasItems||busy;
   heicFormat.disabled=busy;
+  replaceHeic.disabled=busy;
 }
 
 function toBlob(canvas,type,quality){
@@ -158,11 +166,23 @@ async function convert(it,format){
 
 $('go').onclick=async function(){
   var format=heicFormat.value;
+  var replace=replaceHeic.checked;
+  if(replace&&!window.confirm('Substituir os arquivos HEIC/HEIF originais? Os arquivos originais serão removidos após cada conversão bem-sucedida.'))return;
   busy=true;msg.textContent='';render();
   for(var i=0;i<items.length;i++){
     var it=items[i];
+    if(it.replaced)continue;
     it.out=null;it.state='Convertendo…';it.cls='';render();
-    try{await convert(it,format)}catch(e){it.state='Erro: '+(e&&e.message?e.message:'falha ao converter');it.cls='er'}
+    try{
+      await convert(it,format);
+      if(replace){
+        if(!it.path)throw new Error('Não foi possível acessar o caminho do original: '+it.pathError);
+        var savedPath=await window.api.replaceOriginal(it.path,format,await it.out.arrayBuffer());
+        it.replaced=true;
+        it.name=savedPath.split(/[\\/]/).pop();
+        it.state='Original substituído por '+format.toUpperCase();
+      }
+    }catch(e){it.state='Erro: '+(e&&e.message?e.message:'falha ao converter');it.cls='er'}
     render();
   }
   busy=false;render();
@@ -186,7 +206,7 @@ render();
 var generalItems=[],generalBusy=false,generalExtensions=[],generalFormatsLoaded=false;
 var generalDrop=$('general-drop'),generalFile=$('general-file');
 var generalList=$('general-list'),generalFormat=$('general-fmt'),generalMsg=$('general-msg');
-var outputLabels={png:'PNG (sem perda)',tiff:'TIFF sem compressão',webp:'WebP lossless'};
+var replaceGeneral=$('replace-general'),outputFormats=[];
 var tabHeic=$('tab-heic'),tabGeneral=$('tab-general');
 
 function selectTab(name){
@@ -200,24 +220,24 @@ tabHeic.onclick=function(){selectTab('heic')};
 tabGeneral.onclick=function(){selectTab('general')};
 
 function updateGeneralFormats(){
-  var ready=generalItems.filter(function(item){return item.info&&item.info.targets.length});
   var analyzing=generalItems.some(function(item){return item.state==='Analisando imagem…'});
-  var compatible=Object.keys(outputLabels).filter(function(format){
-    return ready.length&&ready.every(function(item){
-      return item.info.targets.some(function(target){return target.id===format});
+  var pending=generalItems.filter(function(item){return !item.replaced});
+  var compatible=outputFormats.filter(function(format){
+    return pending.length&&pending.every(function(item){
+      return item.info&&item.info.targets.some(function(target){return target.id===format.id});
     });
-  });
+  }).map(function(format){return format.id});
   var previous=generalFormat.value;
   generalFormat.innerHTML='';
   compatible.forEach(function(format){
     var option=document.createElement('option');
     option.value=format;
-    option.textContent=outputLabels[format];
+    option.textContent=outputFormats.find(function(candidate){return candidate.id===format}).label;
     generalFormat.appendChild(option);
   });
   if(compatible.indexOf(previous)!==-1)generalFormat.value=previous;
   else if(compatible.indexOf('png')!==-1)generalFormat.value='png';
-  $('general-go').disabled=!ready.length||!compatible.length||generalBusy||analyzing;
+  $('general-go').disabled=!pending.length||!compatible.length||generalBusy||analyzing;
 }
 
 function renderGeneral(){
@@ -225,10 +245,10 @@ function renderGeneral(){
   generalItems.forEach(function(item){
     var li=document.createElement('li');
     var details=document.createElement('div');details.className='in';
-    var name=document.createElement('div');name.className='nm';name.textContent=item.file.name;
+    var name=document.createElement('div');name.className='nm';name.textContent=item.replaced?item.name:item.file.name;
     var state=document.createElement('div');state.className='st '+item.cls;state.textContent=item.state;
     details.appendChild(name);details.appendChild(state);li.appendChild(details);
-    if(item.output){
+    if(item.output&&!item.replaced){
       var saveButton=document.createElement('button');saveButton.textContent='Salvar';
       saveButton.onclick=function(){saveGeneral(item)};
       li.appendChild(saveButton);
@@ -236,9 +256,11 @@ function renderGeneral(){
     generalList.appendChild(li);
   });
   updateGeneralFormats();
-  var done=generalItems.some(function(item){return item.output});
+  var done=generalItems.some(function(item){return item.output&&!item.replaced});
   $('general-all').disabled=!done||generalBusy;
   $('general-clear').disabled=!generalItems.length||generalBusy;
+  replaceGeneral.disabled=generalBusy;
+  generalFormat.disabled=generalBusy;
 }
 
 function addGeneral(files){
@@ -256,7 +278,7 @@ function addGeneral(files){
     catch(error){generalMsg.textContent='Não foi possível acessar o arquivo: '+error.message;return}
     var item={file:file,path:filePath,info:null,output:null,name:'',state:'Analisando imagem…',cls:''};
     generalItems.push(item);
-    window.api.getLosslessImageInfo(item.path).then(function(info){
+    window.api.getImageConversionInfo(item.path).then(function(info){
       item.info=info;
       item.state=info.targets.length
         ?info.width+' × '+info.height+' · '+info.depth
@@ -283,16 +305,27 @@ generalFile.onchange=function(){addGeneral(generalFile.files);generalFile.value=
 
 $('general-go').onclick=async function(){
   var format=generalFormat.value;
+  var replace=replaceGeneral.checked;
+  if(replace&&!window.confirm('Substituir os arquivos originais? Os originais serão removidos somente após cada conversão bem-sucedida.'))return;
   generalBusy=true;generalMsg.textContent='';renderGeneral();
   for(var i=0;i<generalItems.length;i++){
     var item=generalItems[i];
+    if(item.replaced)continue;
     if(!item.info||!item.info.targets.some(function(target){return target.id===format}))continue;
-    item.output=null;item.state='Convertendo sem perda…';item.cls='';renderGeneral();
+    item.output=null;item.replaced=false;item.state='Convertendo…';item.cls='';renderGeneral();
     try{
-      var result=await window.api.convertLosslessImage(item.path,format);
+      var result=await window.api.convertImage(item.path,format);
       item.output=result.data;
-      item.name=item.file.name.replace(/\.[^.]+$/,'')+'.'+format;
-      item.state='Pronto · '+(result.size/1048576).toFixed(2)+' MB';
+      var outputFormat=outputFormats.find(function(candidate){return candidate.id===format});
+      item.name=item.file.name.replace(/\.[^.]+$/,'')+'.'+outputFormat.extension;
+      if(replace){
+        var savedPath=await window.api.replaceOriginal(item.path,outputFormat.extension,item.output);
+        item.replaced=true;
+        item.name=savedPath.split(/[\\/]/).pop();
+        item.state='Original substituído · '+outputFormat.label;
+      }else{
+        item.state='Pronto · '+(result.size/1048576).toFixed(2)+' MB · '+outputFormat.label;
+      }
       item.cls='ok';
     }catch(error){item.state='Erro: '+error.message;item.cls='er'}
     renderGeneral();
@@ -314,7 +347,7 @@ $('general-all').onclick=async function(){
     var files=[];
     for(var i=0;i<generalItems.length;i++){
       var item=generalItems[i];
-      if(item.output)files.push({name:item.name,buf:item.output.buffer.slice(
+      if(item.output&&!item.replaced)files.push({name:item.name,buf:item.output.buffer.slice(
         item.output.byteOffset,item.output.byteOffset+item.output.byteLength
       )});
     }
@@ -331,11 +364,11 @@ window.api.getImageConverterFormats().then(function(formats){
   generalExtensions=formats.extensions;
   generalFile.accept=generalExtensions.map(function(extension){return '.'+extension}).join(',');
   $('general-formats').textContent='Entradas compatíveis: '+generalExtensions.map(function(extension){return '.'+extension}).join(', ');
-  var available=formats.outputs.map(function(format){return format.id});
   generalFormat.innerHTML='';
-  ['png','tiff','webp'].filter(function(format){return available.indexOf(format)!==-1}).forEach(function(format){
+  outputFormats=formats.outputs;
+  outputFormats.forEach(function(format){
     var option=document.createElement('option');
-    option.value=format;option.textContent=outputLabels[format];generalFormat.appendChild(option);
+    option.value=format.id;option.textContent=format.label;generalFormat.appendChild(option);
   });
 }).catch(function(error){
   generalFormatsLoaded=true;
