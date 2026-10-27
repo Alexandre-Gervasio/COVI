@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>COVI</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#14171c;--mut:#667085;--bd:#e2e5ea;--ac:#2f6fed;--act:#fff;--ok:#12805c;--er:#c4321c}
+@media (prefers-color-scheme:dark){:root{--bg:#101215;--card:#1a1d22;--tx:#eceef2;--mut:#98a1b0;--bd:#2b3038;--ac:#5b92ff;--act:#0b0d10;--ok:#4cc39a;--er:#ff7a63;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:4px 0 0}
+p.brand-name{color:var(--mut);margin:0;font-size:14px}
+p.tagline{font-weight:600;margin:8px 0 2px}
+p.s{color:var(--mut);margin:0 0 16px;font-size:14px}
+#drop{border:2px dashed var(--bd);background:var(--card);border-radius:16px;padding:28px 16px;text-align:center;cursor:pointer}
+#drop.on{border-color:var(--ac)}
+#drop b{display:block;font-size:17px;margin-bottom:4px}
+#drop span{color:var(--mut);font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;align-items:end}
+label{display:flex;flex-direction:column;font-size:13px;color:var(--mut);gap:4px;flex:1;min-width:130px}
+select,input[type=range]{width:100%;font:inherit;color:var(--tx)}
+select{padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--card)}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 14px;background:var(--ac);color:var(--act);cursor:pointer}
+button.g{background:transparent;color:var(--ac);border:1px solid var(--bd)}
+button:disabled{opacity:.5;cursor:default}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+li{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:10px}
+.th{width:56px;height:56px;border-radius:8px;background:var(--bd);flex:none;object-fit:cover}
+.in{flex:1;min-width:0}
+.nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;font-size:14px}
+.st{font-size:12px;color:var(--mut)}
+.st.ok{color:var(--ok)}.st.er{color:var(--er)}
+#msg{font-size:13px;color:var(--mut);margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>COVI</h1>
+<p class="brand-name">Conversor Otimizado de Vários formatos de Imagem</p>
+<p class="tagline">Converta. Simplifique. Pronto.</p>
+<p class="s">Converta fotos do iPhone para JPG, PNG ou WebP. Tudo acontece no seu computador, nada é enviado.</p>
+<div id="drop" tabindex="0"><b>Clique ou arraste suas fotos .heic</b><span>Você pode escolher vários arquivos</span></div>
+<input id="file" type="file" accept=".heic,.heif,image/heic,image/heif" multiple hidden>
+<div class="row">
+  <label>Formato
+    <select id="fmt"><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
+  </label>
+  <label id="qw">Qualidade: <span id="qv">90</span>%
+    <input id="q" type="range" min="40" max="100" value="90">
+  </label>
+</div>
+<div class="row" style="margin-top:0">
+  <button id="go" disabled>Converter</button>
+  <button id="all" class="g" disabled>Salvar todos…</button>
+  <button id="clr" class="g" disabled>Limpar</button>
+</div>
+<ul id="list"></ul>
+<div id="msg"></div>
+</main>
+<script src="node_modules/heic2any/dist/heic2any.min.js"></script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var items=[],busy=false;
+var drop=$('drop'),file=$('file'),fmt=$('fmt'),q=$('q'),list=$('list'),msg=$('msg');
+
+drop.onclick=function(){file.click()};
+drop.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click()}};
+['dragover','dragenter'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.add('on')})});
+['dragleave','drop'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.remove('on')})});
+drop.addEventListener('drop',function(e){add(e.dataTransfer.files)});
+file.onchange=function(){add(file.files);file.value=''};
+q.oninput=function(){$('qv').textContent=q.value};
+fmt.onchange=function(){$('qw').style.display=fmt.value==='png'?'none':'flex'};
+
+function add(fs){
+  Array.prototype.forEach.call(fs,function(f){
+    if(!/\.(heic|heif)$/i.test(f.name)&&!/hei[cf]/i.test(f.type)) return;
+    items.push({f:f,out:null,name:'',state:'Na fila',cls:''});
+  });
+  render();
+}
+
+function render(){
+  list.innerHTML='';
+  items.forEach(function(it){
+    var li=document.createElement('li');
+    var img=document.createElement('img');img.className='th';img.alt='';
+    if(it.thumb)img.src=it.thumb;
+    var d=document.createElement('div');d.className='in';
+    var n=document.createElement('div');n.className='nm';n.textContent=it.f.name;
+    var s=document.createElement('div');s.className='st '+it.cls;s.textContent=it.state;
+    d.appendChild(n);d.appendChild(s);
+    li.appendChild(img);li.appendChild(d);
+    if(it.out){
+      var b=document.createElement('button');b.textContent='Salvar';
+      b.onclick=function(){save(it)};
+      li.appendChild(b);
+    }
+    list.appendChild(li);
+  });
+  var has=items.length>0,done=items.some(function(x){return x.out});
+  $('go').disabled=!has||busy;
+  $('all').disabled=!done||busy;
+  $('clr').disabled=!has||busy;
+}
+
+function toBlob(c,type,qual){return new Promise(function(r){c.toBlob(r,type,qual)})}
+
+async function convert(it){
+  var type=fmt.value==='jpg'?'image/jpeg':fmt.value==='png'?'image/png':'image/webp';
+  var res=await heic2any({blob:it.f,toType:'image/png'});
+  var png=Array.isArray(res)?res[0]:res;
+  var bmp=await createImageBitmap(png);
+  var c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+  var x=c.getContext('2d');
+  if(type==='image/jpeg'){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
+  x.drawImage(bmp,0,0);
+  var out=type==='image/png'?png:await toBlob(c,type,q.value/100);
+  if(!out)throw new Error('falha ao gerar a imagem');
+  var t=document.createElement('canvas'),sc=112/Math.min(bmp.width,bmp.height);
+  t.width=Math.max(1,Math.round(bmp.width*sc));t.height=Math.max(1,Math.round(bmp.height*sc));
+  t.getContext('2d').drawImage(bmp,0,0,t.width,t.height);
+  it.thumb=t.toDataURL('image/jpeg',.7);
+  it.out=out;
+  it.name=it.f.name.replace(/\.[^.]+$/,'')+'.'+fmt.value;
+  it.state='Pronto · '+(out.size/1048576).toFixed(2)+' MB';it.cls='ok';
+  if(bmp.close)bmp.close();
+}
+
+$('go').onclick=async function(){
+  busy=true;msg.textContent='';render();
+  for(var i=0;i<items.length;i++){
+    var it=items[i];
+    it.out=null;it.state='Convertendo…';it.cls='';render();
+    try{await convert(it)}catch(e){it.state='Erro: '+(e&&e.message?e.message:'falha ao converter');it.cls='er'}
+    render();
+  }
+  busy=false;render();
+};
+
+async function save(it){
+  var ok=await window.api.save(it.name,await it.out.arrayBuffer());
+  msg.textContent=ok?'Arquivo salvo.':'';
+}
+
+$('all').onclick=async function(){
+  var fs=[];
+  for(var i=0;i<items.length;i++){if(items[i].out)fs.push({name:items[i].name,buf:await items[i].out.arrayBuffer()})}
+  var n=await window.api.saveAll(fs);
+  msg.textContent=n?n+' arquivo(s) salvo(s).':'';
+};
+
+$('clr').onclick=function(){items=[];msg.textContent='';render()};
+render();
+})();
+</script>
+</body>
+</html>

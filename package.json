@@ -1,0 +1,56 @@
+{
+  "name": "covi",
+  "version": "1.1.0",
+  "description": "COVI — Conversor Otimizado de Vários formatos de Imagem. Converta. Simplifique. Pronto.",
+  "main": "main.js",
+  "author": {
+    "name": "Alexandre",
+    "email": "alexandre@example.com"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "heic2any": "0.0.4"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.alexandre.conversorheic",
+    "productName": "COVI",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "prompt.html",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.photography"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Graphics",
+      "maintainer": "Alexandre <alexandre@example.com>"
+    }
+  }
+}
