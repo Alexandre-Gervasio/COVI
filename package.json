@@ -5,7 +5,7 @@
   "main": "main.js",
   "author": {
     "name": "Alexandre",
-    "email": "alexandre@example.com"
+    "email": "alexandrework010@gmail.com"
   },
   "scripts": {
     "start": "electron .",
@@ -50,7 +50,7 @@
         "deb"
       ],
       "category": "Graphics",
-      "maintainer": "Alexandre <alexandre@example.com>"
+      "maintainer": "Alexandre <alexandrework010@gmail.com>"
     }
   }
 }
