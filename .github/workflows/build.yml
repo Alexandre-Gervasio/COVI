@@ -33,6 +33,16 @@ jobs:
         with: { node-version: 20 }
       - run: npm ci
       - run: npm run dist
+      - name: Validate Windows updater installer name
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $manifest = Get-Content dist/latest.yml -Raw
+          $expectedName = [regex]::Match($manifest, '(?m)^path:\s*(.+)\s*$').Groups[1].Value
+          $installers = @(Get-ChildItem dist -File -Filter '*.exe')
+          if (-not $expectedName -or $installers.Count -ne 1 -or $installers[0].Name -ne $expectedName) {
+            throw "Windows updater manifest path '$expectedName' does not match the installer artifact."
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: instalador-${{ matrix.os }}
