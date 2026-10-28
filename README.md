@@ -17,6 +17,9 @@ Baixe o instalador para seu sistema operacional na página de
 
 ## Recursos
 
+- A leitura de HEIC/HEIF usa um decodificador WebAssembly incluído no aplicativo;
+  não exige instalar codecs no sistema nem conexão com a internet para converter.
+
 - Converta uma ou várias fotos de uma só vez.
 - Escolha PNG para preservar os pixels decodificados ou JPG, que pode reduzir
   a qualidade por usar compressão com perda.

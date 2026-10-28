@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
+const decodeHeic = require('heic-decode');
 
 function registerImageConverterIpc(ipcMain) {
   const LOSSLESS_SPACES = ['srgb', 'rgb', 'rgb16', 'b-w', 'grey16'];
@@ -87,6 +88,49 @@ function registerImageConverterIpc(ipcMain) {
     };
   }
 
+  async function convertHeic(contents, outputFormat) {
+    if (!Buffer.isBuffer(contents) && !(contents instanceof ArrayBuffer) && !ArrayBuffer.isView(contents)) {
+      throw new Error('Dados da imagem HEIC invalidos.');
+    }
+    if (!['png', 'jpg'].includes(outputFormat)) {
+      throw new Error('Formato de saida HEIC invalido.');
+    }
+
+    const input = Buffer.isBuffer(contents)
+      ? contents
+      : contents instanceof ArrayBuffer
+        ? Buffer.from(contents)
+        : Buffer.from(contents.buffer, contents.byteOffset, contents.byteLength);
+    const { width, height, data } = await decodeHeic({ buffer: input });
+    const expectedLength = width * height * 4;
+    if (
+      !Number.isSafeInteger(expectedLength) ||
+      width < 1 ||
+      height < 1 ||
+      data.byteLength !== expectedLength
+    ) {
+      throw new Error('O decodificador retornou dados invalidos para a imagem HEIC.');
+    }
+
+    let image = sharp(Buffer.from(data.buffer, data.byteOffset, data.byteLength), {
+      raw: { width, height, channels: 4 }
+    });
+    if (outputFormat === 'jpg') {
+      image = image.flatten({ background: '#ffffff' })
+        .jpeg({ quality: 92, chromaSubsampling: '4:4:4', mozjpeg: true });
+    } else {
+      image = image.png({ compressionLevel: 9, palette: false });
+    }
+
+    const { data: output, info } = await image.toBuffer({ resolveWithObject: true });
+    return {
+      data: new Uint8Array(output),
+      size: info.size,
+      width: info.width,
+      height: info.height
+    };
+  }
+
   function writeAtomically(filePath, contents) {
     const temporary = path.join(
       path.dirname(filePath),
@@ -141,6 +185,7 @@ function registerImageConverterIpc(ipcMain) {
   }
 
   ipcMain.handle('replaceOriginal', (e, filePath, extension, contents) => replaceOriginal(filePath, extension, contents));
+  ipcMain.handle('convertHeic', (e, contents, format) => convertHeic(contents, format));
   ipcMain.handle('getImageConverterFormats', () => ({
     extensions: getSupportedImageExtensions(),
     outputs: [...getAvailableFormats(LOSSLESS_FORMATS), ...getAvailableFormats(LOSSY_FORMATS)]

@@ -46,27 +46,18 @@ function render(){
   replaceHeic.disabled=busy;
 }
 
-function toBlob(canvas,type,quality){
-  return new Promise(function(resolve){canvas.toBlob(resolve,type,quality)});
-}
-
 async function convert(it,format){
-  var res=await heic2any({blob:it.f,toType:'image/png'});
-  var png=Array.isArray(res)?res[0]:res;
-  var bmp=await createImageBitmap(png);
-  var c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
-  var x=c.getContext('2d');
-  if(format==='jpg'){x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height)}
-  x.drawImage(bmp,0,0);
-  var out=format==='jpg'?await toBlob(c,'image/jpeg',0.92):png;
-  if(!out)throw new Error('falha ao gerar a imagem');
+  var result=await window.api.convertHeic(await it.f.arrayBuffer(),format);
+  var type=format==='jpg'?'image/jpeg':'image/png';
+  var out=new Blob([result.data],{type:type});
+  var bmp=await createImageBitmap(out);
   var t=document.createElement('canvas'),sc=112/Math.min(bmp.width,bmp.height);
   t.width=Math.max(1,Math.round(bmp.width*sc));t.height=Math.max(1,Math.round(bmp.height*sc));
   t.getContext('2d').drawImage(bmp,0,0,t.width,t.height);
   it.thumb=t.toDataURL('image/jpeg',.7);
   it.out=out;
   it.name=it.f.name.replace(/\.[^.]+$/,'')+'.'+format;
-  it.state='Pronto · '+(out.size/1048576).toFixed(2)+' MB';it.cls='ok';
+  it.state='Pronto · '+(result.size/1048576).toFixed(2)+' MB';it.cls='ok';
   if(bmp.close)bmp.close();
 }
 

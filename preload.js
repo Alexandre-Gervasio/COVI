@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   getImageConverterFormats: () => i('getImageConverterFormats'),
   getImageConversionInfo: (p) => i('getImageConversionInfo', p),
   convertImage: (p, f) => i('convertImage', p, f),
+  convertHeic: (contents, format) => i('convertHeic', contents, format),
   replaceOriginal: (p, ext, b) => i('replaceOriginal', p, ext, b),
   getUpdateStatus: () => i('update:getStatus'),
   updateAction: () => i('update:action'),
